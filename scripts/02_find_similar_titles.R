@@ -6,59 +6,63 @@ dt <- fread("outputs/preregs.csv", header = T, encoding = "UTF-8")
 # i want to find which titles are the most similar in terms of the words they contain
 # create dt of all titles compared to each other and their matches
 
-clean_str <- function(string){
-  string <- tolower(string)
-  # remove punctuation that comes before or after a word
-  string <- gsub(" [[:punct:]]{1,}|[[:punct:]]{1,} |^[[:punct:]]{1,}|[[:punct:]]{1,}$", " ", string)
-  # remove multiple spaces
-  string <- gsub("[[:space:]]{2,}", " ", string)
-}
+max <- max(lengths(strsplit(dt$title, " ")))
 
-dt <- dt[, "title_clean" := clean_str(title)]
+cols <- paste("word", 1:max, sep = "")
 
-test <- setcolorder(dt, c("title", "title_clean"))
+dt <- dt[, (cols) := tstrsplit(title, " ", fixed = T)]
 
-pairs <- list()
+pairs_ls <- list()
 n <- 1
 
-for(i in dt$title_clean){
-  string_2 <- dt$title_clean[dt$title_clean != i]
+for(i in dt$title){
+  string_2 <- dt$title[dt$title != i]
   string_1 <- rep(i, length(string_2))
   length(string_1) <- dt[,.N]
   length(string_2) <- dt[,.N]
   df <- data.frame(string_1 = string_1, string_2 = string_2, stringsAsFactors = F)
-  pairs[[n]] <- df
+  pairs_ls[[n]] <- df
   n <- n +1
 }
 
-test <- rbindlist(pairs) %>%
+pairs <- rbindlist(pairs_ls) %>%
   # remove duplicate rows
   unique()
 
-stopwords <- c("and", "the", "of", "a", "for", "to", "by", "in", "on", "amp", "from", "an")
+# create list of vectors of split title strings so can easily intersect
+
+split_ls <- strsplit(dt$title, " ", fixed = T)
+names(split_ls) <- dt$title
 
 matches <- list()
 
-for(i in 1:length(test$string_1)){
-  a <- unlist(strsplit(test[i, string_1], " "))
-  a <- a[!(a %in% stopwords)]
-  b <- unlist(strsplit(test[i, string_2], " "))
-  b <- b[!(b %in% stopwords)]
-  matches[[i]] <- intersect(a, b)
+for(i in 1:nrow(pairs)){
+  a <- pairs$string_1[i]
+  b <- pairs$string_2[i]
+  matches[[i]]<-   intersect(unlist(split_ls[a]), unlist(split_ls[b]))
   print(paste(i, "done"))
 }
 
-copy <- matches %>%
+
+stopwords <- c("and", "the", "of", "a", "for", "to", "by", "in", "on", "amp", "from", "an")
+
+matches_col <- matches %>%
   as.character() 
 
-length(copy) <- test[,.N]
-copy[copy == "character(0)"] <- NA
+length(matches_col) <- pairs[,.N]
+matches_col[matches_col == "character(0)"] <- NA
 
-copy <- copy %>%
+matches_col <- matches_col %>%
+  # remove start
   gsub("c\\(", "", .) %>%
+  #remove punct in middle of word and collapse words together
+  gsub("[[:alpha:]][[:punct:]]{1,}[[:alpha:]]", "", .) %>%
+  # remove remaining punctuation
   gsub("[[:punct:]]", " ", .) %>%
-  gsub("[[:space:]]{2,}", " ", .)
+  # remove multiple spaces
+  gsub("[[:space:]]{2,}", " ", .) %>%
+  # remove trailing whitespace from replaced punctuation
+  trimws(which = "both")
 
-test$matches <- copy
-
-paste(strsplit(copy[!is.na(copy)], " "))
+pairs$matches <- matches_col
+pairs <- pairs[, c("matchesN") := lengths(strsplit(matches, " "))]
