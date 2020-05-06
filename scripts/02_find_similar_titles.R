@@ -47,15 +47,15 @@ stopwords <- readLines("https://gist.githubusercontent.com/sebleier/554280/raw/7
 # subset by keywords ####
 ################
 
-keywords <- c("SARS", "ncov", "covid-19", "coronavirus") 
+#keywords <- c("SARS", "ncov", "covid-19", "coronavirus") 
 
-search <- paste(keywords, collapse = "|", sep ="")
+#search <- paste(keywords, collapse = "|", sep ="")
 
-hits <- lapply(dt[, c("tags", "title", "description")], function(x) grep(search,x, ignore.case = T)) %>%
-  unlist() %>%
-  unique()
+#hits <- lapply(dt[, c("tags", "title", "description")], function(x) grep(search,x, ignore.case = T)) %>%
+  #unlist() %>%
+  #unique()
 
-dt <- dt[hits, ]
+#dt <- dt[hits, ]
 
 ##############
 # clean titles ####
@@ -119,7 +119,7 @@ tic1 <- Sys.time()
 if(nrow(pairs) != length(id)) stop("wrong number of elements in id")
 
 # check correct number of duplicates
-if(nrow(pairs[!(duplicated(id))]) != nrow(pairs)/2) stop("not a duplicate for each combination")
+if(nrow(pairs[!(duplicated(id))]) != nrow(pairs)/2) warning("not a duplicate for each combination")
 
 # remove duplicate ids from pairs
 pairs <- pairs[!(duplicated(id))]
@@ -180,10 +180,10 @@ keyword_cl <- unlist(strsplit(clean_title(keywords, stopwords = stopwords), spli
   # turn into search string like stopword search string
   paste("\\b", ., "\\b", collapse = "|", sep = "")
 
+# create dt to clean
+covid <- pairs[, -c("str2", "str1", "matchesN")]
+
 # remove keywords from matches to see which are most similar (this assumes all/most titles contain one of the)
-
-covid <- pairs[, -c("str2", "str1")]
-
 covid$matches <- covid$matches %>%
   # remove keywords
   gsub(keyword_cl, "", .) %>% 
@@ -196,7 +196,14 @@ covid$matches <- covid$matches %>%
   # turn spaces back into commas
   gsub(" ", ",", .) 
 
-covid <- covid[order(covid$matchesN, decreasing = T), ]
+covid$matches[covid$matches == ""] <- NA
+
+#count number of matches after removing keywords
+covid <- covid[, c("matchesN") := stringr::str_count(matches, ",") +1] %>%
+  # sort pairs from most matches to least
+  .[order(.$matchesN, decreasing = T), ]
+
+covid <- covid[!is.na(covid$matches), ]
 
 sort(table(unlist(strsplit(covid$matches, ",", fixed = T))), decreasing = T)
 
