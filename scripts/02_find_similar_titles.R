@@ -14,7 +14,7 @@ library(magrittr)
 
 # functions
 
-clean_title <- function(string){
+clean_title <- function(string, stopwords){
   # collapse hypenated words so they will be matched as a single word
   string <- gsub("[[:alpha:]][[:punct:]]{1,}[:alpha:]]", "", string)
   # remove remaining punctuation (include unicode for "General punctuation" range)
@@ -44,25 +44,29 @@ stopwords <- readLines("https://gist.githubusercontent.com/sebleier/554280/raw/7
 
 
 #####################
-# subset covid ####
+# subset by keywords ####
 ################
 
-#covid <- lapply(dt[, c("tags", "title", "description")], function(x) grep("SARS|covid|coronavirus",x)) %>%
-# unlist() %>%
-#unique()
+keywords <- c("SARS", "ncov", "covid-19", "coronavirus") 
 
-#dt <- dt[covid, ]
+search <- paste(keywords, collapse = "|", sep ="")
+
+hits <- lapply(dt[, c("tags", "title", "description")], function(x) grep(search,x, ignore.case = T)) %>%
+  unlist() %>%
+  unique()
+
+dt <- dt[hits, ]
 
 ##############
 # clean titles ####
 ###############
 
 # create clean string
-dt <- dt[, c("title_clean") := clean_title(title)]
+dt <- dt[, c("title_clean") := clean_title(title, stopwords = stopwords)]
 
 # save all non-stop words in separate columns
 
-max <- max(lengths(strsplit(dt$title_clean, " ")))
+max <- max(lengths(strsplit(dt$title_clean, " ", fixed = T)))
 
 cols <- paste("word", 1:max, sep = "")
 
@@ -114,6 +118,9 @@ tic1 <- Sys.time()
 # check all rows sorted
 if(nrow(pairs) != length(id)) stop("wrong number of elements in id")
 
+# check correct number of duplicates
+if(nrow(pairs[!(duplicated(id))]) != nrow(pairs)/2) stop("not a duplicate for each combination")
+
 # remove duplicate ids from pairs
 pairs <- pairs[!(duplicated(id))]
 
@@ -160,7 +167,38 @@ pairs <- pairs[, c("matchesN") := stringr::str_count(matches, ",") +1] %>%
   # sort pairs from most matches to least
   .[order(.$matchesN, decreasing = T), ]
 
+#############
+# clean covid results ####
+##################
 
+# remove keywords from matches >
+# can't remove keywords in clean_title function because some titles may only consist of this key word e.g. "Systematic review" would be empty if used as keyword
+
+# clean and tokenise keywords so they will match format in title_clean
+keyword_cl <- unlist(strsplit(clean_title(keywords, stopwords = stopwords), split = " ")) %>%
+  c(., c("2019", "pandemic")) %>%
+  # turn into search string like stopword search string
+  paste("\\b", ., "\\b", collapse = "|", sep = "")
+
+# remove keywords from matches to see which are most similar (this assumes all/most titles contain one of the)
+
+covid <- pairs[, -c("str2", "str1")]
+
+covid$matches <- covid$matches %>%
+  # remove keywords
+  gsub(keyword_cl, "", .) %>% 
+  # change all commas to spaces so can easily remove trailing commas
+  gsub(",", " ", .) %>%
+  # remove multiple spaces
+  gsub("[[:space:]]{2,}", " ", .) %>%
+  # remove whitespace at end
+  trimws(., which= "both") %>%
+  # turn spaces back into commas
+  gsub(" ", ",", .) 
+
+covid <- covid[order(covid$matchesN, decreasing = T), ]
+
+sort(table(unlist(strsplit(covid$matches, ",", fixed = T))), decreasing = T)
 
 end <- Sys.time()
 
@@ -168,6 +206,6 @@ end <- Sys.time()
 # export ####
 ###########
 
-fwrite(pairs2, "outputs/matches.csv")
+fwrite(pairs, "outputs/matches.csv")
 
 
